@@ -9,11 +9,15 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/common")
 public class TestController {
 
-//    protected TestService testService;
+    protected TestService testService;
+
+    public TestController(TestService testService) {
+        this.testService = testService;
+    }
 
     @GetMapping("/test")
     public String testMethod() {
-        return "";
-//        return testService.testExecution();
+//        return "";
+        return testService.testExecution();
     }
 }
