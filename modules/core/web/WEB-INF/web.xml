@@ -22,6 +22,10 @@
         <listener-class>com.haulmont.cuba.core.sys.AppContextLoader</listener-class>
     </listener>
 
+    <listener>
+        <listener-class>org.springframework.web.context.request.RequestContextListener</listener-class>
+    </listener>
+
     <servlet>
         <servlet-name>remoting</servlet-name>
         <servlet-class>com.haulmont.cuba.core.sys.remoting.RemotingServlet</servlet-class>
