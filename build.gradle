@@ -97,6 +97,7 @@ configure(coreModule) {
         compile('org.springframework:spring-context-support:5.2.9.RELEASE')
         compile('org.springframework.security:spring-security-oauth2-resource-server:5.2.1.RELEASE')
         compile('org.springframework.security:spring-security-oauth2-jose:5.2.1.RELEASE')
+        compile('org.springframework.security:spring-security-oauth2-client:5.2.1.RELEASE')
         compileOnly(servletApi)
         jdbc(hsql)
         testRuntime(hsql)
