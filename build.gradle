@@ -45,11 +45,17 @@ configure([globalModule, coreModule, webModule]) {
     apply(plugin: 'maven')
     apply(plugin: 'cuba')
 
+    java {
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+    }
+
     dependencies {
-            testCompile('org.junit.jupiter:junit-jupiter-api:5.5.2')
-            testCompile('org.junit.jupiter:junit-jupiter-engine:5.5.2')
-            testCompile('org.junit.vintage:junit-vintage-engine:5.5.2')  
-        }
+        compile('io.vavr:vavr:0.10.3')
+        testCompile('org.junit.jupiter:junit-jupiter-api:5.5.2')
+        testCompile('org.junit.jupiter:junit-jupiter-engine:5.5.2')
+        testCompile('org.junit.vintage:junit-vintage-engine:5.5.2')
+    }
 
     task sourceJar(type: Jar) {
         from file('src')
@@ -59,6 +65,7 @@ configure([globalModule, coreModule, webModule]) {
     artifacts {
         archives sourceJar
     } 
+
     test {
         useJUnitPlatform()
     }

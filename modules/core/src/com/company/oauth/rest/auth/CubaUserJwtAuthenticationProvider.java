@@ -1,6 +1,10 @@
 package com.company.oauth.rest.auth;
 
+import com.company.oauth.config.KeyCloakClientRegistrationConfig;
+import com.company.oauth.config.KeyCloakResourceServerConfig;
 import com.company.oauth.core.UsersRepository;
+import com.company.oauth.exception.CubaUserSessionNotFound;
+import com.company.oauth.exception.MakingCubaUserSessionException;
 import com.google.common.base.Strings;
 import com.haulmont.addon.restapi.api.config.RestApiConfig;
 import com.haulmont.addon.restapi.exception.RestApiAccessDeniedException;
@@ -17,9 +21,11 @@ import com.haulmont.cuba.security.auth.AuthenticationService;
 import com.haulmont.cuba.security.auth.Credentials;
 import com.haulmont.cuba.security.auth.LoginPasswordCredentials;
 import com.haulmont.cuba.security.auth.TrustedClientCredentials;
+import com.haulmont.cuba.security.entity.User;
 import com.haulmont.cuba.security.global.AccountLockedException;
 import com.haulmont.cuba.security.global.LoginException;
 import com.haulmont.cuba.security.global.UserSession;
+import io.vavr.control.Either;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,6 +39,9 @@ import org.springframework.security.authentication.LockedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.client.userinfo.OAuth2UserRequest;
+import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -42,17 +51,16 @@ import org.springframework.security.oauth2.server.resource.BearerTokenAuthentica
 import org.springframework.security.oauth2.server.resource.BearerTokenError;
 import org.springframework.security.oauth2.server.resource.BearerTokenErrorCodes;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationProvider;
 import org.springframework.security.web.authentication.WebAuthenticationDetails;
 import org.springframework.stereotype.Component;
 import org.springframework.util.Assert;
-import org.springframework.util.SerializationUtils;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
-import javax.annotation.Nonnull;
 import javax.servlet.http.HttpServletRequest;
-import javax.validation.constraints.NotNull;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -70,6 +78,12 @@ public class CubaUserJwtAuthenticationProvider implements AuthenticationProvider
     protected static final String SESSION_ID_DETAILS_ATTRIBUTE = "sessionId";
 
     private static final Logger log = LoggerFactory.getLogger(CubaUserJwtAuthenticationProvider.class);
+
+    protected JwtAuthenticationProvider jwtAuthenticationProvider;
+
+    protected ClientRegistrationRepository clientRegistrationRepository;
+
+    protected CubaOAuth2UserService<OAuth2UserRequest, User> userService;
 
     protected AuthenticationService authenticationService;
 
@@ -91,13 +105,16 @@ public class CubaUserJwtAuthenticationProvider implements AuthenticationProvider
 
     protected ServerTokenStore serverTokenStore;
 
+    protected KeyCloakClientRegistrationConfig keyCloakClientRegistrationConfig;
+    protected KeyCloakResourceServerConfig keyCloakResourceServerConfig;
+
     private Converter<Jwt, ? extends AbstractAuthenticationToken> jwtAuthenticationConverter = new JwtAuthenticationConverter();
 
     private static final OAuth2Error DEFAULT_INVALID_TOKEN =
             invalidToken("An error occurred while attempting to decode the Jwt: Invalid token");
 
 
-    public CubaUserJwtAuthenticationProvider(AuthenticationService authenticationService, Messages messages, UsersRepository usersRepository, TrustedClientService trustedClientService, RestAuthUtils restAuthUtils, RestApiConfig restApiConfig, GlobalConfig globalConfig, JwtDecoder jwtDecoder, ServerTokenStore serverTokenStore) {
+    public CubaUserJwtAuthenticationProvider(AuthenticationService authenticationService, Messages messages, UsersRepository usersRepository, TrustedClientService trustedClientService, RestAuthUtils restAuthUtils, RestApiConfig restApiConfig, GlobalConfig globalConfig, JwtDecoder jwtDecoder, ServerTokenStore serverTokenStore, KeyCloakResourceServerConfig keyCloakResourceServerConfig) {
         this.authenticationService = authenticationService;
         this.messages = messages;
         this.usersRepository = usersRepository;
@@ -107,6 +124,7 @@ public class CubaUserJwtAuthenticationProvider implements AuthenticationProvider
         this.globalConfig = globalConfig;
         this.jwtDecoder = jwtDecoder;
         this.serverTokenStore = serverTokenStore;
+        this.keyCloakResourceServerConfig = keyCloakResourceServerConfig;
     }
 
     /**
@@ -119,29 +137,77 @@ public class CubaUserJwtAuthenticationProvider implements AuthenticationProvider
      */
     @Override
     public Authentication authenticate(Authentication authentication) throws AuthenticationException {
-        BearerTokenAuthenticationToken bearer = (BearerTokenAuthenticationToken) authentication;
-        Jwt jwt = decodeToken(bearer.getToken());
+        var bearer = (BearerTokenAuthenticationToken) authentication;
 
-        AbstractAuthenticationToken token = this.jwtAuthenticationConverter.convert(jwt);
-        token.setDetails(bearer.getDetails());
+        // do everytime to control that token isn't expired
+        var jwtToken = jwtAuthenticationProvider.authenticate(authentication);
 
         // CUBA.platform path
+        var usFromTokenStore = findUserSessionInTokenStoreByToken(bearer.getToken());
+        if (usFromTokenStore != null) {
+            AppContext.setSecurityContext(new SecurityContext(usFromTokenStore));
+
+            //noinspection unchecked
+            return createExternalAuthenticationToken(authentication,
+                    (Map<String, Object>) jwtToken.getDetails(), usFromTokenStore.getId());
+        }
+
+        if (! keyCloakResourceServerConfig.getEnableMakingSession()) {
+            throw new CubaUserSessionNotFound(bearer.getToken());
+        }
+
+        // try to make CUBA.platform user session by existed user
+        var newUserSession = makeCubaUserSession(bearer, jwtToken);
+
+        if (newUserSession.isRight()) {
+            var us = newUserSession.get();
+
+            AppContext.setSecurityContext(new SecurityContext(us));
+
+            //noinspection unchecked
+            return createExternalAuthenticationToken(authentication,
+                    (Map<String, Object>) jwtToken.getDetails(), us.getId());
+        }
+
+        if (! keyCloakResourceServerConfig.getEnableUserRegistration()) {
+            throw mapOnSpringException(newUserSession.getLeft());
+        }
+
+        // try to register new user and making session
+        var clientRegistration = clientRegistrationRepository
+                .findByRegistrationId(keyCloakClientRegistrationConfig
+                        .getKeyCloakClientRegistrationId());
+
+        var accessToken = new OAuth2AccessToken();
+
+        User user = userService.registerUser(new OAuth2UserRequest(
+                clientRegistration, accessToken, Collections.emptyMap()));
+
+        newUserSession = makeCubaUserSession();
+        //noinspection Convert2MethodRef
+        newUserSession.map(us -> {
+            AppContext.setSecurityContext(new SecurityContext(us));
+
+            //noinspection unchecked
+            return createExternalAuthenticationToken(authentication,
+                    (Map<String, Object>) jwtToken.getDetails(), us.getId());
+
+        }).getOrElseThrow(ex -> new MakingCubaUserSessionException(ex));
+
+
+        String login = extractLogin(jwtToken);
+
+
+
 
         ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.currentRequestAttributes();
         HttpServletRequest request = attributes.getRequest();
 
         String ipAddress = request.getRemoteAddr();
-        String login = getLogin(token);
 
         WebAuthenticationDetails authenticationDetails = (WebAuthenticationDetails) authentication.getDetails();
         Map<String, Object> details = new HashMap<>();
 
-        RestUserSessionInfo cubaSessionInfo = serverTokenStore.getSessionInfoByTokenValue(bearer.getToken());
-        if (cubaSessionInfo != null) {
-            processSession(cubaSessionInfo, authenticationDetails.getSessionId(), bearer.getToken(), login);
-
-            return createExternalAuthenticationToken(authentication, details, cubaSessionInfo.getId());
-        }
 
         UserSession session;
         try {
@@ -177,11 +243,92 @@ public class CubaUserJwtAuthenticationProvider implements AuthenticationProvider
             throw new BadCredentialsException("Bad credentials");
         }
 
+
+        if (session == null && keyCloakResourceServerConfig.getEnableUserRegistration()) {
+            // try to registrate user and make session again
+        }
+
         AppContext.setSecurityContext(new SecurityContext(session));
 
         return createExternalAuthenticationToken(authentication, details, session.getId());
     }
 
+    protected AuthenticationException mapOnSpringException(LoginException ex) {
+        if (ex instanceof AccountLockedException) {
+            log.info("Blocked user login attempt: login={}, ip={}", login, ipAddress);
+            throw new LockedException("User temporarily blocked");
+        }
+
+        if (ex instanceof RestApiAccessDeniedException) {
+            log.info("User is not allowed to use the REST API {}", login);
+            throw new BadCredentialsException("User is not allowed to use the REST API");
+        }
+
+        if (ex instanceof LoginException) {
+            log.info("REST API authentication failed: {}", login);
+            throw new BadCredentialsException("Bad credentials");
+        }
+
+        throw ex;
+    }
+
+    protected UserSession findUserSessionInTokenStoreByToken(String token) {
+        RestUserSessionInfo sessionInfo = serverTokenStore.getSessionInfoByTokenValue(token);
+
+        if (sessionInfo != null) {
+            var sessionId = sessionInfo.getId();
+
+            try {
+                return trustedClientService.findSession(restApiConfig.getTrustedClientPassword(), sessionId);
+            } catch (LoginException e) {
+                throw new RuntimeException("Unable to login with trusted client password");
+            }
+        }
+
+        return null;
+    }
+
+    protected Either<LoginException, UserSession> makeCubaUserSession(BearerTokenAuthenticationToken bearer, Authentication jwtToken) {
+
+        ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.currentRequestAttributes();
+        HttpServletRequest request = attributes.getRequest();
+
+        String ipAddress = request.getRemoteAddr();
+
+        String login = extractLogin(jwtToken);
+
+        UserSession session;
+        try {
+            TrustedClientCredentials credentials = new TrustedClientCredentials(login, restApiConfig.getTrustedClientPassword(), Locale.ENGLISH);
+            credentials.setIpAddress(ipAddress);
+            credentials.setClientType(ClientType.REST_API);
+            credentials.setClientInfo(makeClientInfo(request.getHeader(HttpHeaders.USER_AGENT)));
+            credentials.setSecurityScope(restApiConfig.getSecurityScope());
+
+            //if the locale value is explicitly passed in the Accept-Language header then set its value to the
+            //credentials. Otherwise, the locale of the user should be used
+            Locale locale = restAuthUtils.extractLocaleFromRequestHeader(request);
+            if (locale != null) {
+                credentials.setLocale(locale);
+                credentials.setOverrideLocale(true);
+            } else {
+                credentials.setOverrideLocale(false);
+            }
+
+            session = authenticationService.login(credentials).getSession();
+
+            serverTokenStore.putSessionInfo(bearer.getToken(),
+                    new RestUserSessionInfo(session.getId(), locale));
+
+        } catch (LoginException e) {
+            return Either.left(e);
+        }
+
+        log.debug("New session created for token '{}' since the original session has been expired", tokenMasker.maskToken(tokenValue));
+
+        return Either.right(session);
+
+    }
     private ExternalAuthenticationToken createExternalAuthenticationToken(Authentication authentication,
                                                                           Map<String, Object> details, UUID sessionId) {
         ExternalAuthenticationToken result = new ExternalAuthenticationToken(
@@ -218,8 +365,13 @@ public class CubaUserJwtAuthenticationProvider implements AuthenticationProvider
         }
     }
 
-    private String getLogin(AbstractAuthenticationToken token) {
-        return ((Jwt) token.getPrincipal()).getClaim("preferred_username");
+    private String extractLogin(Authentication token) {
+        return extractPrincipalClaim(token, keyCloakResourceServerConfig.getLoginClaim());
+    }
+
+    private String extractPrincipalClaim(Authentication token, String claim) {
+        return ((Jwt) token.getPrincipal())
+                .getClaim(keyCloakResourceServerConfig.getLoginClaim());
     }
 
     private static OAuth2Error invalidToken(String message) {

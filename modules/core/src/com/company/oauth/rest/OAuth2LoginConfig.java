@@ -1,5 +1,6 @@
 package com.company.oauth.rest;
 
+import com.company.oauth.config.KeyCloakClientRegistrationConfig;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -16,10 +17,13 @@ import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.core.oidc.IdTokenClaimNames;
 
-import static org.springframework.security.config.Customizer.withDefaults;
+import javax.inject.Inject;
 
 @Configuration
 public class OAuth2LoginConfig {
+
+    @Inject
+    protected KeyCloakClientRegistrationConfig keyCloakConfig;
 
     @EnableWebSecurity
     public static class OAuth2LoginSecurityConfig extends WebSecurityConfigurerAdapter {
@@ -35,7 +39,7 @@ public class OAuth2LoginConfig {
 
     @Bean
     public ClientRegistrationRepository clientRegistrationRepository() {
-        return new InMemoryClientRegistrationRepository(this.googleClientRegistration());
+        return new InMemoryClientRegistrationRepository(this.keycloakClientRegistration());
     }
 
     @Bean
@@ -50,8 +54,8 @@ public class OAuth2LoginConfig {
         return new AuthenticatedPrincipalOAuth2AuthorizedClientRepository(authorizedClientService);
     }
 
-    private ClientRegistration googleClientRegistration() {
-        return ClientRegistration.withRegistrationId("marketplace")
+    private ClientRegistration keycloakClientRegistration() {
+        return ClientRegistration.withRegistrationId(keyCloakConfig.getKeyCloakClientRegistrationId())
                 .clientId("marketplace")
                 .clientSecret("ef3e4e98-1e90-4811-948f-c38c22a73a54")
                 .clientAuthenticationMethod(ClientAuthenticationMethod.BASIC)
