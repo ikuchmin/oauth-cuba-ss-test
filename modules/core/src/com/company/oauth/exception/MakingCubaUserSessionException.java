@@ -1,27 +1,44 @@
 package com.company.oauth.exception;
 
 import com.haulmont.cuba.core.global.SupportedByClient;
+import com.haulmont.cuba.security.global.LoginException;
 
 @SupportedByClient
-public class MakingCubaUserSessionException extends RuntimeException {
+public class MakingCubaUserSessionException extends LoginException {
 
-    public MakingCubaUserSessionException() {
-        super();
-    }
+    protected String login;
 
-    public MakingCubaUserSessionException(String message) {
+    protected String ipAddress;
+
+    public MakingCubaUserSessionException(String message, String login, String ipAddress) {
         super(message);
+        this.login = login;
+        this.ipAddress = ipAddress;
     }
 
-    public MakingCubaUserSessionException(String message, Throwable cause) {
+    public MakingCubaUserSessionException(Throwable t, String login, String ipAddress) {
+        super(t);
+        this.login = login;
+        this.ipAddress = ipAddress;
+    }
+
+    public MakingCubaUserSessionException(String message, Throwable cause, String login, String ipAddress) {
         super(message, cause);
+        this.login = login;
+        this.ipAddress = ipAddress;
     }
 
-    public MakingCubaUserSessionException(Throwable cause) {
-        super(cause);
+    public MakingCubaUserSessionException(String template, String login, String ipAddress, Object... params) {
+        super(template, params);
+        this.login = login;
+        this.ipAddress = ipAddress;
     }
 
-    protected MakingCubaUserSessionException(String message, Throwable cause, boolean enableSuppression, boolean writableStackTrace) {
-        super(message, cause, enableSuppression, writableStackTrace);
+    public String getLogin() {
+        return login;
+    }
+
+    public String getIpAddress() {
+        return ipAddress;
     }
 }

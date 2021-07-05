@@ -19,13 +19,13 @@ import org.springframework.security.oauth2.core.oidc.IdTokenClaimNames;
 
 import javax.inject.Inject;
 
-@Configuration
+//@Configuration
 public class OAuth2LoginConfig {
 
     @Inject
     protected KeyCloakClientRegistrationConfig keyCloakConfig;
 
-    @EnableWebSecurity
+//    @EnableWebSecurity
     public static class OAuth2LoginSecurityConfig extends WebSecurityConfigurerAdapter {
 
         @Override

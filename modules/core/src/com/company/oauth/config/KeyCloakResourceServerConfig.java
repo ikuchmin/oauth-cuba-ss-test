@@ -9,10 +9,10 @@ import com.haulmont.cuba.core.config.defaults.DefaultString;
 @Source(type = SourceType.APP)
 public interface KeyCloakResourceServerConfig extends Config {
 
-    @DefaultBoolean(false)
+    @DefaultBoolean(true)
     Boolean getEnableMakingSession();
 
-    @DefaultBoolean(false)
+    @DefaultBoolean(true)
     Boolean getEnableUserRegistration();
 
     @DefaultString("preferred_username")

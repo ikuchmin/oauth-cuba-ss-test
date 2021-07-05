@@ -26,5 +26,4 @@ import org.springframework.security.oauth2.core.user.OAuth2User;
 public interface CubaOAuth2UserService<R extends OAuth2UserRequest, U extends User> {
 
 	U registerUser(R userRequest) throws OAuth2AuthenticationException;
-
 }
