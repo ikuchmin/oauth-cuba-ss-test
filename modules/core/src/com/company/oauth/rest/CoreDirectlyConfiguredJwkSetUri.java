@@ -29,7 +29,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 @EnableWebSecurity
-public class DirectlyConfiguredJwkSetUri extends WebSecurityConfigurerAdapter {
+public class CoreDirectlyConfiguredJwkSetUri extends WebSecurityConfigurerAdapter {
 
 //    @Inject
 //    protected KeyCloakClientRegistrationConfig keyCloakConfig;

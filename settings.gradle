@@ -1,6 +1,8 @@
 rootProject.name = 'oauth-cuba-ss-test'
 def modulePrefix = 'app'
-include(":${modulePrefix}-global", ":${modulePrefix}-core", ":${modulePrefix}-web")
+include(":${modulePrefix}-global", ":${modulePrefix}-core", ":${modulePrefix}-web", ":${modulePrefix}-portal")
 project(":${modulePrefix}-global").projectDir = new File(settingsDir, 'modules/global')
 project(":${modulePrefix}-core").projectDir = new File(settingsDir, 'modules/core')
 project(":${modulePrefix}-web").projectDir = new File(settingsDir, 'modules/web')
+
+project(":${modulePrefix}-portal").projectDir = new File(settingsDir, 'modules/portal')

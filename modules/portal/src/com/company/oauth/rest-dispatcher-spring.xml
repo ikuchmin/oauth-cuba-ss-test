@@ -1,0 +1,25 @@
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xmlns:mvc="http://www.springframework.org/schema/mvc"
+       xmlns:oauth2="http://www.springframework.org/schema/security/oauth2"
+       xmlns:security="http://www.springframework.org/schema/security">
+
+    <context:component-scan base-package="com.company.oauth.rest"/>
+
+    <bean id="anonymousProvider" class="org.springframework.security.authentication.AnonymousAuthenticationProvider">
+        <constructor-arg name="key" value="SomeUniqueKeyForThisApplication" />
+    </bean>
+
+    <!-- Copy/Paste from CUBA config  -->
+    <oauth2:resource-server id="resourceServer" token-services-ref="tokenServices"/>
+
+    <bean id="resourceFilter" class="org.springframework.web.filter.CompositeFilter">
+        <property name="filters">
+            <list>
+                <ref bean="resourceServer"/>
+                <ref bean="bearerTokenAuthenticationFilter"/>
+            </list>
+        </property>
+    </bean>
+
+</beans>
